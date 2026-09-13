@@ -1,0 +1,164 @@
+{
+  "name": "SMMP - 02 Publisher Facebook",
+  "nodes": [
+    {
+      "id": "fb01",
+      "name": "TRIGGER - Execute From Master",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-600, 300],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            { "name": "schedule_id", "type": "string" },
+            { "name": "asset_id", "type": "string" },
+            { "name": "campaign_id", "type": "string" },
+            { "name": "client_id", "type": "string" },
+            { "name": "platform_config", "type": "string" },
+            { "name": "creative", "type": "string" },
+            { "name": "storage_ref", "type": "string" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fb02",
+      "name": "CODE - Facebook Publish Preparation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-380, 300],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Builds the Graph API payload. Deterministic, no AI involvement.\nconst j = $json;\nlet cfg = {}, creative = {};\ntry { cfg = typeof j.platform_config === 'string' ? JSON.parse(j.platform_config) : (j.platform_config || {}); } catch (e) { cfg = {}; }\ntry { creative = typeof j.creative === 'string' ? JSON.parse(j.creative) : (j.creative || {}); } catch (e) { creative = {}; }\n\nconst pageId = cfg.page_id || $env.META_PAGE_ID;\nconst caption = [String(creative.caption || '').trim(), String(creative.cta || '').trim(), (creative.hashtags || []).join(' ')]\n  .filter(Boolean).join('\\n\\n');\n\nconst errors = [];\nif (!pageId) errors.push('missing_page_id');\nif (!caption) errors.push('missing_caption');\nif (!j.storage_ref) errors.push('missing_image_reference');\nif (!/^https?:\\/\\//i.test(String(j.storage_ref || ''))) errors.push('image_reference_not_public_url');\n\nreturn {\n  json: {\n    schedule_id: j.schedule_id,\n    asset_id: j.asset_id,\n    campaign_id: j.campaign_id,\n    client_id: j.client_id,\n    platform: 'facebook',\n    ready: errors.length === 0,\n    prep_errors: errors,\n    page_id: pageId,\n    api_version: $env.META_API_VERSION || 'v21.0',\n    caption,\n    image_url: j.storage_ref\n  }\n};"
+      }
+    },
+    {
+      "id": "fb03",
+      "name": "IF - Facebook Ready",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-160, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "fb-ready", "leftValue": "={{ $json.ready }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "fb04",
+      "name": "HTTP - Facebook Graph API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [60, 200],
+      "credentials": { "httpHeaderAuth": { "id": "META_GRAPH_API_CREDENTIAL", "name": "META_GRAPH_API_CREDENTIAL" } },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.api_version }}/{{ $json.page_id }}/photos",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.image_url, caption: $json.caption, published: true }) }}",
+        "options": { "timeout": 60000, "response": { "response": { "fullResponse": false } } }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "Credential must supply header Authorization: Bearer <PAGE_ACCESS_TOKEN>. Retries provide exponential-style backoff for transient 5xx/429."
+    },
+    {
+      "id": "fb05",
+      "name": "CODE - Facebook Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 120],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const prep = $('CODE - Facebook Publish Preparation').first().json;\nconst r = $input.first().json || {};\nconst postId = r.post_id || r.id || null;\nreturn [{\n  json: {\n    ...prep,\n    status: postId ? 'published' : 'failed',\n    platform_post_id: postId,\n    published_at: new Date().toISOString(),\n    raw_response: r,\n    error_detail: postId ? null : { stage: 'publication', platform: 'facebook', error_code: 'no_post_id_returned', message: 'Graph API returned no post identifier', retry_count: 0, timestamp: new Date().toISOString() }\n  }\n}];"
+      }
+    },
+    {
+      "id": "fb06",
+      "name": "CODE - Facebook Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 320],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const prep = $('CODE - Facebook Publish Preparation').first().json;\nconst e = $input.first().json || {};\nconst code = e.error?.error?.code || e.error?.code || e.code || 'graph_api_error';\nconst msg = e.error?.error?.message || e.error?.message || e.message || 'Facebook publication failed';\nreturn [{\n  json: {\n    ...prep,\n    status: 'failed',\n    platform_post_id: null,\n    published_at: null,\n    raw_response: e,\n    error_detail: { stage: 'publication', platform: 'facebook', error_code: String(code), message: String(msg), retry_count: 3, timestamp: new Date().toISOString() }\n  }\n}];"
+      }
+    },
+    {
+      "id": "fb07",
+      "name": "CODE - Facebook Not Ready",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 460],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $input.first().json;\nreturn [{ json: { ...p, status: 'blocked', platform_post_id: null, published_at: null, raw_response: null, error_detail: { stage: 'publication_preparation', platform: 'facebook', error_code: 'preparation_failed', message: p.prep_errors.join(','), retry_count: 0, timestamp: new Date().toISOString() } } }];"
+      }
+    },
+    {
+      "id": "fb08",
+      "name": "DB - Store Facebook Publication",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [500, 300],
+      "credentials": { "postgres": { "id": "POSTGRES_CREDENTIAL", "name": "POSTGRES_CREDENTIAL" } },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO publications (schedule_id, platform, platform_post_id, published_at, status, error_detail, raw_response) VALUES ($1::uuid, 'facebook', $2, NULLIF($3,'')::timestamptz, $4, $5::jsonb, $6::jsonb) ON CONFLICT (schedule_id, platform) DO UPDATE SET platform_post_id = EXCLUDED.platform_post_id, published_at = EXCLUDED.published_at, status = EXCLUDED.status, error_detail = EXCLUDED.error_detail, raw_response = EXCLUDED.raw_response RETURNING publication_id, schedule_id, platform, platform_post_id, status, published_at;",
+        "options": {
+          "queryReplacement": "={{ $json.schedule_id }},{{ $json.platform_post_id || '' }},{{ $json.published_at || '' }},{{ $json.status }},{{ JSON.stringify($json.error_detail) }},{{ JSON.stringify($json.raw_response || {}) }}"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "fb09",
+      "name": "CODE - Facebook Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const row = $input.first().json || {};\nreturn [{ json: { publication_id: row.publication_id || null, schedule_id: row.schedule_id || null, platform: 'facebook', platform_post_id: row.platform_post_id || null, status: row.status || 'failed', published_at: row.published_at || null, error_detail: row.error_detail || null } }];"
+      }
+    }
+  ],
+  "connections": {
+    "TRIGGER - Execute From Master": { "main": [[{ "node": "CODE - Facebook Publish Preparation", "type": "main", "index": 0 }]] },
+    "CODE - Facebook Publish Preparation": { "main": [[{ "node": "IF - Facebook Ready", "type": "main", "index": 0 }]] },
+    "IF - Facebook Ready": {
+      "main": [
+        [{ "node": "HTTP - Facebook Graph API", "type": "main", "index": 0 }],
+        [{ "node": "CODE - Facebook Not Ready", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP - Facebook Graph API": {
+      "main": [
+        [{ "node": "CODE - Facebook Success", "type": "main", "index": 0 }],
+        [{ "node": "CODE - Facebook Failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "CODE - Facebook Success": { "main": [[{ "node": "DB - Store Facebook Publication", "type": "main", "index": 0 }]] },
+    "CODE - Facebook Failure": { "main": [[{ "node": "DB - Store Facebook Publication", "type": "main", "index": 0 }]] },
+    "CODE - Facebook Not Ready": { "main": [[{ "node": "DB - Store Facebook Publication", "type": "main", "index": 0 }]] },
+    "DB - Store Facebook Publication": { "main": [[{ "node": "CODE - Facebook Result", "type": "main", "index": 0 }]] },
+    "CODE - Facebook Result": { "main": [[]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "UTC", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "all" },
+  "pinData": {},
+  "meta": { "instanceId": "SMMP" },
+  "tags": []
+}

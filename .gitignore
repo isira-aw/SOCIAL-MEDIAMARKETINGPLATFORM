@@ -1,0 +1,23 @@
+# Secrets — never commit these
+.env
+.env.*
+!.env.example
+*.key
+*credentials*.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Generated media
+/tmp/
+media/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

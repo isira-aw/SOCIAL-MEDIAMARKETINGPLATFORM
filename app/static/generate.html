@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generator — Postly</title>
+<link rel="stylesheet" href="/styles.css">
+<style>
+  main { padding: 34px 0 70px; }
+  h1 { font-size: 26px; letter-spacing: -.02em; margin: 0 0 6px; }
+  .page-sub { color: var(--muted); margin: 0 0 24px; font-size: 15px; }
+  .layout { display: grid; grid-template-columns: 400px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 940px) { .layout { grid-template-columns: 1fr; } }
+
+  .post { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel);
+          box-shadow: var(--shadow); padding: 20px; margin-bottom: 16px; }
+  .post header { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+  .post header .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .post header .name { font-size: 12px; font-weight: 700; letter-spacing: .07em;
+                       text-transform: uppercase; }
+  .post header .spacer { margin-left: auto; }
+  .facebook .dot { background: #1877f2 } .instagram .dot { background: #e1306c }
+  .whatsapp .dot { background: #25d366 } .linkedin .dot { background: #0a66c2 }
+
+  .post h3 { margin: 0 0 8px; font-size: 17px; letter-spacing: -.01em; }
+  .caption { white-space: pre-wrap; margin: 0 0 12px; }
+  .tags { color: var(--accent); font-size: 14px; word-break: break-word; margin-bottom: 10px; }
+  .kv { display: grid; gap: 6px; font-size: 13px; color: var(--muted);
+        border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+  .kv b { color: var(--ink); font-weight: 600; }
+
+  .hero-img { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--line);
+              background: var(--bg); margin-bottom: 16px; box-shadow: var(--shadow); }
+  .hero-img img { display: block; width: 100%; height: auto; }
+  .hero-img .cap { padding: 12px 16px; font-size: 13px; color: var(--muted);
+                   display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .img-fail { padding: 30px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  .imgprompt { font-style: italic; color: var(--muted); white-space: pre-wrap; font-size: 14px; }
+  .warn { border-color: color-mix(in srgb, var(--err) 40%, var(--line)); }
+  .warn .sec-title { color: var(--err); }
+  .skeleton { height: 14px; border-radius: 6px; background: var(--line); margin-bottom: 10px;
+              animation: pulse 1.3s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: .45 } 50% { opacity: .9 } }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/"><span class="mark">P</span> Postly</a>
+    <nav>
+      <a href="/generate.html" class="active">Generator</a>
+      <a href="/settings.html">Settings</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Campaign generator</h1>
+  <p class="page-sub">Describe the campaign once. Get a post for every channel, plus the image.</p>
+
+  <div class="layout">
+    <form class="card" id="form">
+      <label for="business">Business name</label>
+      <input id="business" required placeholder="Ceylon Spice Kitchen">
+
+      <div class="field-row" style="margin-top:16px">
+        <div>
+          <label for="sector">Sector</label>
+          <input id="sector" placeholder="Food &amp; beverage">
+        </div>
+        <div>
+          <label for="objective">Objective</label>
+          <select id="objective">
+            <option value="product_launch">Product launch</option>
+            <option value="brand_awareness">Brand awareness</option>
+            <option value="promotion">Promotion / offer</option>
+            <option value="engagement">Engagement</option>
+            <option value="event">Event</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-row" style="margin-top:16px">
+        <div>
+          <label for="product">Product or service</label>
+          <input id="product" placeholder="Cold-pressed coconut oil">
+        </div>
+        <div>
+          <label for="tone">Tone</label>
+          <input id="tone" placeholder="warm, informative">
+        </div>
+      </div>
+
+      <label for="audience">Target audience</label>
+      <input id="audience" placeholder="Home cooks aged 25-45 in Colombo">
+
+      <label for="brief">Campaign brief</label>
+      <textarea id="brief" required placeholder="We are launching a new range of cold-pressed coconut oil sourced from small farms in the south. We want to highlight the traditional pressing method and that nothing is added."></textarea>
+
+      <label>Platforms</label>
+      <div class="chips" id="platforms">
+        <label class="chip"><input type="checkbox" value="facebook"> Facebook</label>
+        <label class="chip"><input type="checkbox" value="instagram"> Instagram</label>
+        <label class="chip"><input type="checkbox" value="whatsapp"> WhatsApp</label>
+        <label class="chip"><input type="checkbox" value="linkedin"> LinkedIn</label>
+      </div>
+
+      <div class="switch" style="margin-top:18px">
+        <input type="checkbox" id="gen-image">
+        <span>Generate campaign image</span>
+      </div>
+      <div class="switch" style="margin-top:10px">
+        <input type="checkbox" id="use-n8n">
+        <span>Route through my n8n workflow</span>
+      </div>
+
+      <button class="btn block" type="submit" id="go" style="margin-top:22px">Generate campaign</button>
+      <div class="hint" id="mode-hint"></div>
+      <div class="status" id="status"></div>
+    </form>
+
+    <div id="out">
+      <div class="card">
+        <div class="empty">
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 15l4-4 4 4 3-3 4 4"/><circle cx="9" cy="8.5" r="1.5"/>
+          </svg>
+          Fill in the brief and generate to see your posts here.
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="/app.js"></script>
+<script>
+const s = Settings.get();
+$('business').value = s.business_name;
+$('sector').value   = s.sector;
+$('tone').value     = s.tone;
+$('audience').value = s.audience;
+$('gen-image').checked = s.generate_image;
+$('use-n8n').checked   = s.use_n8n && !!s.n8n_webhook_url;
+document.querySelectorAll('#platforms input').forEach(c => {
+  c.checked = s.platforms.includes(c.value);
+});
+
+function updateHint() {
+  const cur = Settings.get();
+  $('mode-hint').innerHTML = $('use-n8n').checked
+    ? (cur.n8n_webhook_url
+        ? 'Sending to <code>' + esc(cur.n8n_webhook_url) + '</code>'
+        : 'No n8n webhook saved — add one on the <a href="/settings.html">Settings</a> page.')
+    : 'Generating directly with Gemini.';
+}
+$('use-n8n').addEventListener('change', updateHint);
+updateHint();
+
+function renderImage(img, alt) {
+  if (!img) return '';
+  if (img.available) {
+    return '<div class="hero-img">' +
+      '<img src="' + esc(img.url) + '" alt="' + esc(alt || 'Generated campaign image') + '">' +
+      '<div class="cap"><span>Campaign image</span>' +
+      '<span>' + esc(img.model || '') + '</span>' +
+      '<a class="btn ghost small" style="margin-left:auto" href="' + esc(img.url) + '" download>Download</a>' +
+      '</div></div>';
+  }
+  const why = {
+    disabled_by_request: 'Image generation was switched off for this run.',
+    no_image_prompt: 'The model did not produce an image prompt.',
+    no_image_returned: 'The image model returned no image for this prompt.',
+    provider_error: 'The image model rejected the request: ' + (img.detail || '')
+  }[img.reason] || 'The image could not be generated.';
+  return '<div class="hero-img"><div class="img-fail">' + esc(why) + '</div></div>';
+}
+
+function renderPost(p) {
+  const tags = (p.hashtags || []).join(' ');
+  const copy = [p.headline, p.caption, p.cta, tags].filter(Boolean).join('\n\n');
+  let kv = '';
+  if (p.cta)  kv += '<div><b>CTA:</b> ' + esc(p.cta) + '</div>';
+  if (p.alt_text) kv += '<div><b>Alt text:</b> ' + esc(p.alt_text) + '</div>';
+  if (p.best_time_to_post) kv += '<div><b>Suggested timing:</b> ' + esc(p.best_time_to_post) + '</div>';
+  if (p.character_count) kv += '<div><b>Length:</b> ' + p.character_count + ' characters</div>';
+
+  return '<article class="post ' + esc(p.platform) + '">' +
+    '<header><span class="dot"></span><span class="name">' + esc(p.platform) + '</span>' +
+    '<span class="spacer"></span>' +
+    '<button type="button" class="btn ghost small" data-copy="' + esc(copy) + '">Copy post</button>' +
+    '</header>' +
+    (p.headline ? '<h3>' + esc(p.headline) + '</h3>' : '') +
+    '<p class="caption">' + esc(p.caption) + '</p>' +
+    (tags ? '<div class="tags">' + esc(tags) + '</div>' : '') +
+    (kv ? '<div class="kv">' + kv + '</div>' : '') +
+    '</article>';
+}
+
+function render(d) {
+  const parts = [];
+  const c = d.campaign || d.intent || null;
+
+  parts.push(renderImage(d.image, d.image_alt_text));
+
+  if (c) {
+    parts.push('<div class="card" style="margin-bottom:16px"><p class="sec-title">Campaign summary</p><div>');
+    ['objective','product','audience','tone'].forEach(k => {
+      if (c[k]) parts.push('<span class="pill">' + esc(c[k]) + '</span>');
+    });
+    parts.push('</div>');
+    if (Array.isArray(c.themes) && c.themes.length) {
+      parts.push('<p class="sec-title" style="margin:16px 0 8px">Themes</p><div>' +
+        c.themes.map(t => '<span class="pill">' + esc(t) + '</span>').join('') + '</div>');
+    }
+    if (Array.isArray(c.key_messages) && c.key_messages.length) {
+      parts.push('<p class="sec-title" style="margin:16px 0 8px">Key messages</p>' +
+        '<ul style="margin:0;padding-left:19px;font-size:14.5px">' +
+        c.key_messages.map(m => '<li>' + esc(m) + '</li>').join('') + '</ul>');
+    }
+    parts.push('</div>');
+  }
+
+  (d.posts || []).forEach(p => parts.push(renderPost(p)));
+
+  if (d.image_prompt) {
+    parts.push('<div class="card" style="margin-bottom:16px">' +
+      '<p class="sec-title">Image prompt <button type="button" class="btn ghost small" ' +
+      'style="float:right" data-copy="' + esc(d.image_prompt) + '">Copy</button></p>' +
+      '<div class="imgprompt">' + esc(d.image_prompt) + '</div></div>');
+  }
+
+  if (Array.isArray(d.missing_platforms) && d.missing_platforms.length) {
+    parts.push('<div class="card warn" style="margin-bottom:16px"><p class="sec-title">Incomplete</p>' +
+      '<div style="font-size:14px">No post was produced for: <b>' +
+      esc(d.missing_platforms.join(', ')) + '</b>. Try generating again.</div></div>');
+  }
+
+  parts.push('<div class="card"><div class="meta">' +
+    '<span>Campaign <b>' + esc(d.campaign_id || '—') + '</b></span>' +
+    '<span>Source: ' + esc(d.source || 'direct') + '</span>' +
+    (d.content_model ? '<span>Model ' + esc(d.content_model) + '</span>' : '') +
+    (d.elapsed_seconds ? '<span>' + d.elapsed_seconds + 's</span>' : '') +
+    '</div></div>');
+
+  $('out').innerHTML = parts.join('');
+}
+
+function skeleton() {
+  $('out').innerHTML = '<div class="card">' +
+    '<div class="skeleton" style="width:40%"></div>' +
+    '<div class="skeleton"></div><div class="skeleton" style="width:85%"></div>' +
+    '<div class="skeleton" style="width:60%"></div></div>';
+}
+
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const cur = Settings.get();
+  const platforms = [...document.querySelectorAll('#platforms input:checked')].map(c => c.value);
+  if (!platforms.length) return setStatus('err', 'Select at least one platform.');
+
+  const useN8n = $('use-n8n').checked;
+  if (useN8n && !cur.n8n_webhook_url) {
+    return setStatus('err', 'No n8n webhook saved. Add one on the Settings page first.');
+  }
+
+  const payload = {
+    business_name: $('business').value.trim(),
+    sector:    $('sector').value.trim() || 'general',
+    product:   $('product').value.trim(),
+    audience:  $('audience').value.trim() || 'general audience',
+    tone:      $('tone').value.trim() || 'warm, informative',
+    objective: $('objective').value,
+    brief:     $('brief').value.trim(),
+    platforms,
+    generate_image: $('gen-image').checked,
+    mode: useN8n ? 'n8n' : 'direct',
+    n8n_webhook_url: useN8n ? cur.n8n_webhook_url : ''
+  };
+
+  $('go').disabled = true;
+  setStatus('busy', $('gen-image').checked
+    ? 'Writing posts and generating the image… usually 15-30 seconds.'
+    : 'Writing posts… usually 5-15 seconds.');
+  skeleton();
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data) {
+      const detail = data && (data.detail || data.message);
+      const msg = Array.isArray(detail)
+        ? detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+        : (detail || ('Request failed (HTTP ' + res.status + ')'));
+      setStatus('err', msg);
+      $('out').innerHTML = '<div class="card"><div class="empty">Generation failed. ' +
+        esc(msg) + '</div></div>';
+      return;
+    }
+
+    render(data);
+    setStatus('ok', 'Generated ' + (data.posts || []).length + ' post(s).');
+  } catch (err) {
+    setStatus('err', 'Request failed: ' + err.message);
+    $('out').innerHTML = '<div class="card"><div class="empty">Could not reach the server.</div></div>';
+  } finally {
+    $('go').disabled = false;
+  }
+});
+</script>
+</body>
+</html>
