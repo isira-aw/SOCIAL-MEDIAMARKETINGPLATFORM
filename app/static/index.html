@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Postly — AI Social Media Post Generator</title>
+<meta name="description" content="Turn a one-paragraph brief into ready-to-publish social media posts and campaign imagery for Facebook, Instagram, WhatsApp and LinkedIn.">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .hero { padding: 76px 0 64px; text-align: center; }
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px; margin-bottom: 20px;
+    padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .hero h1 {
+    font-size: clamp(34px, 6vw, 54px); line-height: 1.08; letter-spacing: -.03em;
+    margin: 0 auto 18px; max-width: 16ch; font-weight: 800;
+  }
+  .hero h1 em {
+    font-style: normal;
+    background: linear-gradient(100deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #ff7ab6));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .hero p.lede {
+    font-size: 18px; color: var(--muted); max-width: 58ch; margin: 0 auto 32px;
+  }
+  .hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  .logos {
+    margin-top: 46px; display: flex; justify-content: center; gap: 28px;
+    flex-wrap: wrap; font-size: 13px; color: var(--muted); font-weight: 600;
+    letter-spacing: .04em; text-transform: uppercase;
+  }
+  .logos span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 9px; height: 9px; border-radius: 50%; }
+
+  .features { padding: 52px 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  @media (max-width: 860px) { .features { grid-template-columns: 1fr; } }
+  .feature h3 { margin: 0 0 8px; font-size: 17px; letter-spacing: -.01em; }
+  .feature p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .feature .icon {
+    width: 36px; height: 36px; border-radius: 10px; margin-bottom: 14px;
+    background: var(--accent-soft); color: var(--accent);
+    display: grid; place-items: center; font-size: 17px;
+  }
+
+  .steps { padding: 20px 0 60px; }
+  .steps h2, .closing h2 {
+    font-size: 26px; letter-spacing: -.02em; margin: 0 0 8px; text-align: center;
+  }
+  .steps > p { text-align: center; color: var(--muted); margin: 0 0 30px; }
+  .step-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  @media (max-width: 900px) { .step-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 520px) { .step-grid { grid-template-columns: 1fr; } }
+  .step .n {
+    width: 26px; height: 26px; border-radius: 8px; background: var(--accent); color: var(--accent-ink);
+    display: grid; place-items: center; font-size: 13px; font-weight: 700; margin-bottom: 12px;
+  }
+  .step h4 { margin: 0 0 6px; font-size: 15px; }
+  .step p { margin: 0; color: var(--muted); font-size: 14px; }
+
+  .closing { padding: 10px 0 80px; text-align: center; }
+  .closing .card { padding: 44px 28px; }
+  .closing p { color: var(--muted); margin: 0 0 24px; }
+
+  footer {
+    border-top: 1px solid var(--line); padding: 26px 0;
+    font-size: 13px; color: var(--muted);
+  }
+  footer .wrap { display: flex; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/"><span class="mark">P</span> Postly</a>
+    <nav>
+      <a href="/generate.html">Generator</a>
+      <a href="/settings.html">Settings</a>
+      <a class="btn small" href="/generate.html">Create a post</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero wrap">
+    <div class="eyebrow">Powered by Gemini &amp; n8n</div>
+    <h1>One brief in. A <em>full campaign</em> out.</h1>
+    <p class="lede">
+      Describe your business in a paragraph. Postly writes platform-native captions,
+      hashtags and calls to action for every channel you publish on, then generates
+      the campaign image to go with them.
+    </p>
+    <div class="hero-actions">
+      <a class="btn" href="/generate.html">Generate a campaign</a>
+      <a class="btn ghost" href="#how">See how it works</a>
+    </div>
+    <div class="logos">
+      <span><i class="swatch" style="background:#1877f2"></i> Facebook</span>
+      <span><i class="swatch" style="background:#e1306c"></i> Instagram</span>
+      <span><i class="swatch" style="background:#25d366"></i> WhatsApp</span>
+      <span><i class="swatch" style="background:#0a66c2"></i> LinkedIn</span>
+    </div>
+  </section>
+
+  <section class="features wrap">
+    <div class="card feature">
+      <div class="icon">✍</div>
+      <h3>Written for each platform</h3>
+      <p>A Facebook post is not an Instagram caption. Each channel gets its own length,
+         hashtag count, tone and call to action — not one caption copy-pasted four times.</p>
+    </div>
+    <div class="card feature">
+      <div class="icon">◨</div>
+      <h3>Image included</h3>
+      <p>Every campaign ships with a generated visual and alt text, built from an art
+         direction prompt derived from your brand and brief.</p>
+    </div>
+    <div class="card feature">
+      <div class="icon">⚙</div>
+      <h3>Automate it with n8n</h3>
+      <p>Point Postly at an n8n webhook and the same brief flows through your own
+         workflow — ready to extend with scheduling, approval and publishing.</p>
+    </div>
+  </section>
+
+  <section class="steps wrap narrow" id="how">
+    <h2>How it works</h2>
+    <p>Four steps, about fifteen seconds.</p>
+    <div class="step-grid">
+      <div class="card step">
+        <div class="n">1</div>
+        <h4>Set it up once</h4>
+        <p>Save your business name and, optionally, your n8n webhook on the Settings page.</p>
+      </div>
+      <div class="card step">
+        <div class="n">2</div>
+        <h4>Write the brief</h4>
+        <p>A paragraph about what you are promoting and who it is for. That is all.</p>
+      </div>
+      <div class="card step">
+        <div class="n">3</div>
+        <h4>Pick your channels</h4>
+        <p>Choose the platforms you actually publish on. Nothing is generated for the rest.</p>
+      </div>
+      <div class="card step">
+        <div class="n">4</div>
+        <h4>Copy and publish</h4>
+        <p>Captions, hashtags, CTAs, alt text and the image — copy each one and post it.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="closing wrap narrow">
+    <div class="card">
+      <h2>Ready to see it?</h2>
+      <p>No account needed. Your settings stay in this browser.</p>
+      <a class="btn" href="/generate.html">Open the generator</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Postly — AI social media marketing demo</span>
+    <span>FastAPI · Gemini · n8n · Railway</span>
+  </div>
+</footer>
+
+</body>
+</html>

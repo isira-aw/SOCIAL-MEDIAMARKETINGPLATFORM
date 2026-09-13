@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings — Postly</title>
+<link rel="stylesheet" href="/styles.css">
+<style>
+  main { padding: 40px 0 70px; }
+  h1 { font-size: 28px; letter-spacing: -.02em; margin: 0 0 6px; }
+  .page-sub { color: var(--muted); margin: 0 0 28px; }
+  .health { display: grid; gap: 10px; font-size: 14px; }
+  .health div { display: flex; justify-content: space-between; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .health div:last-child { border-bottom: 0; }
+  .health b { font-weight: 600; }
+  .tag { font-size: 12.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+  .tag.yes { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+  .tag.no  { background: color-mix(in srgb, var(--err) 15%, transparent); color: var(--err); }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap">
+    <a class="brand" href="/"><span class="mark">P</span> Postly</a>
+    <nav>
+      <a href="/generate.html">Generator</a>
+      <a href="/settings.html" class="active">Settings</a>
+      <a class="btn small" href="/generate.html">Create a post</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap narrow">
+  <h1>Settings</h1>
+  <p class="page-sub">Saved in this browser only. Nothing is sent anywhere until you generate a campaign.</p>
+
+  <form class="card" id="form">
+    <label for="business">Business name</label>
+    <input id="business" placeholder="Ceylon Spice Kitchen" required>
+    <div class="hint">Pre-fills the generator and grounds everything the model writes.</div>
+
+    <div class="field-row" style="margin-top:16px">
+      <div>
+        <label for="sector">Sector</label>
+        <input id="sector" placeholder="Food &amp; beverage">
+      </div>
+      <div>
+        <label for="tone">Default brand tone</label>
+        <input id="tone" placeholder="warm, informative">
+      </div>
+    </div>
+
+    <label for="audience">Default audience</label>
+    <input id="audience" placeholder="Home cooks aged 25-45 in Colombo">
+
+    <label for="platforms">Default platforms</label>
+    <div class="chips" id="platforms">
+      <label class="chip"><input type="checkbox" value="facebook"> Facebook</label>
+      <label class="chip"><input type="checkbox" value="instagram"> Instagram</label>
+      <label class="chip"><input type="checkbox" value="whatsapp"> WhatsApp</label>
+      <label class="chip"><input type="checkbox" value="linkedin"> LinkedIn</label>
+    </div>
+
+    <label for="webhook" style="margin-top:20px">n8n Webhook URL</label>
+    <input id="webhook" type="url" placeholder="https://your-n8n.up.railway.app/webhook/smmp-demo/campaign">
+    <div class="hint">
+      Optional. Leave blank to generate directly with Gemini. Copy this from the
+      <b>Webhook</b> node in n8n — use the <code>/webhook/</code> production URL with the
+      workflow activated, not <code>/webhook-test/</code>.
+    </div>
+
+    <label style="margin-top:18px">Generation mode</label>
+    <div class="switch">
+      <input type="checkbox" id="use-n8n">
+      <span>Route generation through my n8n workflow instead of Gemini directly</span>
+    </div>
+
+    <div class="switch" style="margin-top:10px">
+      <input type="checkbox" id="gen-image" checked>
+      <span>Generate a campaign image with every post</span>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:24px;flex-wrap:wrap">
+      <button class="btn" type="submit">Save settings</button>
+      <button class="btn ghost" type="button" id="test">Test n8n connection</button>
+      <button class="btn ghost" type="button" id="reset">Reset</button>
+    </div>
+    <div class="status" id="status"></div>
+  </form>
+
+  <div class="card">
+    <p class="sec-title">Server status</p>
+    <div class="health" id="health"><div><span>Loading…</span></div></div>
+  </div>
+</main>
+
+<script src="/app.js"></script>
+<script>
+const F = {
+  business: $('business'), sector: $('sector'), tone: $('tone'),
+  audience: $('audience'), webhook: $('webhook'),
+  useN8n: $('use-n8n'), genImage: $('gen-image')
+};
+
+function load() {
+  const s = Settings.get();
+  F.business.value = s.business_name;
+  F.sector.value = s.sector;
+  F.tone.value = s.tone;
+  F.audience.value = s.audience;
+  F.webhook.value = s.n8n_webhook_url;
+  F.useN8n.checked = s.use_n8n;
+  F.genImage.checked = s.generate_image;
+  document.querySelectorAll('#platforms input').forEach(c => {
+    c.checked = s.platforms.includes(c.value);
+  });
+}
+
+$('form').addEventListener('submit', e => {
+  e.preventDefault();
+  const platforms = [...document.querySelectorAll('#platforms input:checked')].map(c => c.value);
+  if (platforms.length === 0) return setStatus('err', 'Pick at least one default platform.');
+
+  const url = F.webhook.value.trim();
+  if (url && !/^https?:\/\//i.test(url)) {
+    return setStatus('err', 'The n8n webhook URL must start with http:// or https://');
+  }
+  if (F.useN8n.checked && !url) {
+    return setStatus('err', 'n8n mode is on but no webhook URL is set.');
+  }
+
+  Settings.set({
+    business_name: F.business.value.trim(),
+    sector: F.sector.value.trim(),
+    tone: F.tone.value.trim(),
+    audience: F.audience.value.trim(),
+    n8n_webhook_url: url,
+    use_n8n: F.useN8n.checked,
+    generate_image: F.genImage.checked,
+    platforms
+  });
+  setStatus('ok', 'Settings saved.');
+});
+
+$('reset').addEventListener('click', () => {
+  Settings.clear();
+  load();
+  setStatus('ok', 'Settings reset to defaults.');
+});
+
+$('test').addEventListener('click', async () => {
+  const url = F.webhook.value.trim();
+  if (!url) return setStatus('err', 'Enter an n8n webhook URL first.');
+
+  setStatus('busy', 'Sending a test brief to n8n…');
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        business_name: F.business.value.trim() || 'Test Business',
+        brief: 'Connection test from the Postly settings page. Please return a short sample post.',
+        platforms: ['facebook'],
+        mode: 'n8n',
+        n8n_webhook_url: url,
+        generate_image: false
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return setStatus('err', data.detail || ('n8n test failed (HTTP ' + res.status + ')'));
+    setStatus('ok', 'n8n responded successfully. The workflow is reachable and active.');
+  } catch (err) {
+    setStatus('err', 'Request failed: ' + err.message);
+  }
+});
+
+(async () => {
+  try {
+    const h = await (await fetch('/api/health')).json();
+    const yn = v => '<span class="tag ' + (v ? 'yes' : 'no') + '">' + (v ? 'Configured' : 'Missing') + '</span>';
+    $('health').innerHTML =
+      '<div><span>Gemini API key</span>' + yn(h.gemini_key_configured) + '</div>' +
+      '<div><span>Content model</span><b>' + esc(h.content_model) + '</b></div>' +
+      '<div><span>Image model</span><b>' + esc(h.image_model) + '</b></div>' +
+      '<div><span>Server n8n webhook</span>' + yn(h.n8n_webhook_configured) + '</div>' +
+      '<div><span>Platforms</span><b>' + esc(h.supported_platforms.join(', ')) + '</b></div>';
+  } catch (e) {
+    $('health').innerHTML = '<div><span>Could not reach the API.</span></div>';
+  }
+})();
+
+load();
+</script>
+</body>
+</html>

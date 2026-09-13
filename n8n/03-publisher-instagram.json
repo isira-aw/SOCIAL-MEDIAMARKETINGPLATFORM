@@ -1,0 +1,205 @@
+{
+  "name": "SMMP - 03 Publisher Instagram",
+  "nodes": [
+    {
+      "id": "ig01",
+      "name": "TRIGGER - Execute From Master",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-600, 300],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            { "name": "schedule_id", "type": "string" },
+            { "name": "asset_id", "type": "string" },
+            { "name": "campaign_id", "type": "string" },
+            { "name": "client_id", "type": "string" },
+            { "name": "platform_config", "type": "string" },
+            { "name": "creative", "type": "string" },
+            { "name": "storage_ref", "type": "string" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ig02",
+      "name": "CODE - Instagram Media Preparation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-380, 300],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const j = $json;\nlet cfg = {}, creative = {};\ntry { cfg = typeof j.platform_config === 'string' ? JSON.parse(j.platform_config) : (j.platform_config || {}); } catch (e) { cfg = {}; }\ntry { creative = typeof j.creative === 'string' ? JSON.parse(j.creative) : (j.creative || {}); } catch (e) { creative = {}; }\n\nconst igUserId = cfg.ig_user_id || $env.META_IG_USER_ID;\nconst caption = [String(creative.caption || '').trim(), String(creative.cta || '').trim(), (creative.hashtags || []).join(' ')]\n  .filter(Boolean).join('\\n\\n').slice(0, 2200);\n\nconst errors = [];\nif (!igUserId) errors.push('missing_ig_user_id');\nif (!caption) errors.push('missing_caption');\nif (!/^https?:\\/\\//i.test(String(j.storage_ref || ''))) errors.push('image_reference_not_public_url');\n\nreturn {\n  json: {\n    schedule_id: j.schedule_id,\n    asset_id: j.asset_id,\n    campaign_id: j.campaign_id,\n    client_id: j.client_id,\n    platform: 'instagram',\n    ready: errors.length === 0,\n    prep_errors: errors,\n    ig_user_id: igUserId,\n    api_version: $env.META_API_VERSION || 'v21.0',\n    caption,\n    image_url: j.storage_ref\n  }\n};"
+      }
+    },
+    {
+      "id": "ig03",
+      "name": "IF - Instagram Ready",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-160, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "ig-ready", "leftValue": "={{ $json.ready }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ig04",
+      "name": "HTTP - Instagram Create Container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [60, 200],
+      "credentials": { "httpHeaderAuth": { "id": "META_GRAPH_API_CREDENTIAL", "name": "META_GRAPH_API_CREDENTIAL" } },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.api_version }}/{{ $json.ig_user_id }}/media",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ image_url: $json.image_url, caption: $json.caption }) }}",
+        "options": { "timeout": 60000 }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "Step 1 of the Instagram Content Publishing flow: create a media container."
+    },
+    {
+      "id": "ig05",
+      "name": "WAIT - Container Processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [280, 120],
+      "webhookId": "smmp-ig-container-wait",
+      "parameters": { "resume": "timeInterval", "amount": 20, "unit": "seconds" },
+      "notes": "Meta processes the container asynchronously. A short wait avoids publishing an unfinished container."
+    },
+    {
+      "id": "ig06",
+      "name": "HTTP - Instagram Publish Container",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 120],
+      "credentials": { "httpHeaderAuth": { "id": "META_GRAPH_API_CREDENTIAL", "name": "META_GRAPH_API_CREDENTIAL" } },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('CODE - Instagram Media Preparation').first().json.api_version }}/{{ $('CODE - Instagram Media Preparation').first().json.ig_user_id }}/media_publish",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ creation_id: $('HTTP - Instagram Create Container').first().json.id }) }}",
+        "options": { "timeout": 60000 }
+      },
+      "retryOnFail": true,
+      "maxTries": 4,
+      "waitBetweenTries": 8000,
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "Step 2: publish the prepared container."
+    },
+    {
+      "id": "ig07",
+      "name": "CODE - Instagram Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 40],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const prep = $('CODE - Instagram Media Preparation').first().json;\nconst r = $input.first().json || {};\nconst mediaId = r.id || null;\nreturn [{\n  json: {\n    ...prep,\n    status: mediaId ? 'published' : 'failed',\n    platform_post_id: mediaId,\n    published_at: new Date().toISOString(),\n    raw_response: { container: $('HTTP - Instagram Create Container').first().json, publish: r },\n    error_detail: mediaId ? null : { stage: 'publication', platform: 'instagram', error_code: 'no_media_id_returned', message: 'media_publish returned no id', retry_count: 0, timestamp: new Date().toISOString() }\n  }\n}];"
+      }
+    },
+    {
+      "id": "ig08",
+      "name": "CODE - Instagram Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 260],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const prep = $('CODE - Instagram Media Preparation').first().json;\nconst e = $input.first().json || {};\nconst code = e.error?.error?.code || e.error?.code || e.code || 'graph_api_error';\nconst msg = e.error?.error?.message || e.error?.message || e.message || 'Instagram publication failed';\nreturn [{\n  json: {\n    ...prep,\n    status: 'failed',\n    platform_post_id: null,\n    published_at: null,\n    raw_response: e,\n    error_detail: { stage: 'publication', platform: 'instagram', error_code: String(code), message: String(msg), retry_count: 3, timestamp: new Date().toISOString() }\n  }\n}];"
+      }
+    },
+    {
+      "id": "ig09",
+      "name": "CODE - Instagram Not Ready",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 460],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $input.first().json;\nreturn [{ json: { ...p, status: 'blocked', platform_post_id: null, published_at: null, raw_response: null, error_detail: { stage: 'publication_preparation', platform: 'instagram', error_code: 'preparation_failed', message: p.prep_errors.join(','), retry_count: 0, timestamp: new Date().toISOString() } } }];"
+      }
+    },
+    {
+      "id": "ig10",
+      "name": "DB - Store Instagram Publication",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [960, 300],
+      "credentials": { "postgres": { "id": "POSTGRES_CREDENTIAL", "name": "POSTGRES_CREDENTIAL" } },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO publications (schedule_id, platform, platform_post_id, published_at, status, error_detail, raw_response) VALUES ($1::uuid, 'instagram', $2, NULLIF($3,'')::timestamptz, $4, $5::jsonb, $6::jsonb) ON CONFLICT (schedule_id, platform) DO UPDATE SET platform_post_id = EXCLUDED.platform_post_id, published_at = EXCLUDED.published_at, status = EXCLUDED.status, error_detail = EXCLUDED.error_detail, raw_response = EXCLUDED.raw_response RETURNING publication_id, schedule_id, platform, platform_post_id, status, published_at;",
+        "options": {
+          "queryReplacement": "={{ $json.schedule_id }},{{ $json.platform_post_id || '' }},{{ $json.published_at || '' }},{{ $json.status }},{{ JSON.stringify($json.error_detail) }},{{ JSON.stringify($json.raw_response || {}) }}"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "ig11",
+      "name": "CODE - Instagram Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1180, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const row = $input.first().json || {};\nreturn [{ json: { publication_id: row.publication_id || null, schedule_id: row.schedule_id || null, platform: 'instagram', platform_post_id: row.platform_post_id || null, status: row.status || 'failed', published_at: row.published_at || null, error_detail: row.error_detail || null } }];"
+      }
+    }
+  ],
+  "connections": {
+    "TRIGGER - Execute From Master": { "main": [[{ "node": "CODE - Instagram Media Preparation", "type": "main", "index": 0 }]] },
+    "CODE - Instagram Media Preparation": { "main": [[{ "node": "IF - Instagram Ready", "type": "main", "index": 0 }]] },
+    "IF - Instagram Ready": {
+      "main": [
+        [{ "node": "HTTP - Instagram Create Container", "type": "main", "index": 0 }],
+        [{ "node": "CODE - Instagram Not Ready", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP - Instagram Create Container": {
+      "main": [
+        [{ "node": "WAIT - Container Processing", "type": "main", "index": 0 }],
+        [{ "node": "CODE - Instagram Failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "WAIT - Container Processing": { "main": [[{ "node": "HTTP - Instagram Publish Container", "type": "main", "index": 0 }]] },
+    "HTTP - Instagram Publish Container": {
+      "main": [
+        [{ "node": "CODE - Instagram Success", "type": "main", "index": 0 }],
+        [{ "node": "CODE - Instagram Failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "CODE - Instagram Success": { "main": [[{ "node": "DB - Store Instagram Publication", "type": "main", "index": 0 }]] },
+    "CODE - Instagram Failure": { "main": [[{ "node": "DB - Store Instagram Publication", "type": "main", "index": 0 }]] },
+    "CODE - Instagram Not Ready": { "main": [[{ "node": "DB - Store Instagram Publication", "type": "main", "index": 0 }]] },
+    "DB - Store Instagram Publication": { "main": [[{ "node": "CODE - Instagram Result", "type": "main", "index": 0 }]] },
+    "CODE - Instagram Result": { "main": [[]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "UTC", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "all" },
+  "pinData": {},
+  "meta": { "instanceId": "SMMP" },
+  "tags": []
+}

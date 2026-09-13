@@ -1,0 +1,176 @@
+{
+  "name": "SMMP - 04 Publisher WhatsApp Business",
+  "nodes": [
+    {
+      "id": "wa01",
+      "name": "TRIGGER - Execute From Master",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-600, 300],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            { "name": "schedule_id", "type": "string" },
+            { "name": "asset_id", "type": "string" },
+            { "name": "campaign_id", "type": "string" },
+            { "name": "client_id", "type": "string" },
+            { "name": "platform_config", "type": "string" },
+            { "name": "creative", "type": "string" },
+            { "name": "storage_ref", "type": "string" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "wa02",
+      "name": "CODE - WhatsApp Message Preparation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-380, 300],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "/*\n * WhatsApp Business publication is PROVIDER-SPECIFIC and, in the research\n * system, only partially implemented and under test. This node therefore\n * fails CLOSED: unless every required configuration value is explicitly\n * present, the branch reports 'not_configured' and nothing is sent.\n *\n * Required in clients.platform_config.whatsapp:\n *   phone_number_id  - the WhatsApp Business phone number id\n *   api_version      - optional, falls back to WHATSAPP_API_VERSION\n *   endpoint         - optional, falls back to graph.facebook.com\n *   recipients       - array of E.164 numbers with recorded opt-in\n *   template         - optional; required for business-initiated messages\n *                      outside the 24h customer service window\n */\nconst j = $json;\nlet cfg = {}, creative = {};\ntry { cfg = typeof j.platform_config === 'string' ? JSON.parse(j.platform_config) : (j.platform_config || {}); } catch (e) { cfg = {}; }\ntry { creative = typeof j.creative === 'string' ? JSON.parse(j.creative) : (j.creative || {}); } catch (e) { creative = {}; }\n\nconst phoneNumberId = cfg.phone_number_id || $env.WHATSAPP_PHONE_NUMBER_ID;\nconst apiVersion = cfg.api_version || $env.WHATSAPP_API_VERSION || 'v21.0';\nconst host = cfg.endpoint || 'https://graph.facebook.com';\nconst recipients = Array.isArray(cfg.recipients) ? cfg.recipients.filter(r => /^\\+?[1-9]\\d{7,14}$/.test(String(r))) : [];\nconst body = [String(creative.caption || '').trim(), String(creative.cta || '').trim()].filter(Boolean).join('\\n\\n').slice(0, 900);\n\nconst missing = [];\nif (!phoneNumberId) missing.push('phone_number_id');\nif (recipients.length === 0) missing.push('recipients_with_opt_in');\nif (!body) missing.push('message_body');\nif (cfg.opt_in_confirmed !== true) missing.push('opt_in_confirmation_flag');\n\nreturn {\n  json: {\n    schedule_id: j.schedule_id,\n    asset_id: j.asset_id,\n    campaign_id: j.campaign_id,\n    client_id: j.client_id,\n    platform: 'whatsapp',\n    configured: missing.length === 0,\n    missing_configuration: missing,\n    url: host.replace(/\\/$/, '') + '/' + apiVersion + '/' + phoneNumberId + '/messages',\n    recipients,\n    body,\n    image_url: /^https?:\\/\\//i.test(String(j.storage_ref || '')) ? j.storage_ref : null,\n    template: cfg.template || null\n  }\n};"
+      }
+    },
+    {
+      "id": "wa03",
+      "name": "IF - WhatsApp Configured",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-160, 300],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+          "conditions": [
+            { "id": "wa-cfg", "leftValue": "={{ $json.configured }}", "rightValue": "", "operator": { "type": "boolean", "operation": "true", "singleValue": true } }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "wa04",
+      "name": "CODE - Expand Recipients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 200],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $input.first().json;\nreturn p.recipients.map(to => ({ json: { ...p, to } }));"
+      }
+    },
+    {
+      "id": "wa05",
+      "name": "HTTP - WhatsApp Business API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [280, 200],
+      "credentials": { "httpHeaderAuth": { "id": "WHATSAPP_BUSINESS_CREDENTIAL", "name": "WHATSAPP_BUSINESS_CREDENTIAL" } },
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const j = $json; if (j.template) { return JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: j.to, type: 'template', template: j.template }); } if (j.image_url) { return JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: j.to, type: 'image', image: { link: j.image_url, caption: j.body } }); } return JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: j.to, type: 'text', text: { preview_url: false, body: j.body } }); })() }}",
+        "options": { "timeout": 60000 }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 6000,
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput",
+      "notes": "PROVIDER-SPECIFIC. Verify endpoint, API version and message type against your WhatsApp Business Solution Provider before enabling. Credential supplies Authorization: Bearer <WABA token>."
+    },
+    {
+      "id": "wa06",
+      "name": "CODE - WhatsApp Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 120],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const prep = $('CODE - WhatsApp Message Preparation').first().json;\nconst rows = $input.all().map(i => i.json);\nconst ids = rows.flatMap(r => (r.messages || []).map(m => m.id)).filter(Boolean);\nreturn [{\n  json: {\n    ...prep,\n    status: ids.length > 0 ? 'published' : 'failed',\n    platform_post_id: ids[0] || null,\n    all_message_ids: ids,\n    published_at: new Date().toISOString(),\n    raw_response: { responses: rows },\n    error_detail: ids.length > 0 ? null : { stage: 'publication', platform: 'whatsapp', error_code: 'no_message_id_returned', message: 'WhatsApp API returned no message id', retry_count: 0, timestamp: new Date().toISOString() }\n  }\n}];"
+      }
+    },
+    {
+      "id": "wa07",
+      "name": "CODE - WhatsApp Failure",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 320],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const prep = $('CODE - WhatsApp Message Preparation').first().json;\nconst e = $input.first().json || {};\nconst code = e.error?.error?.code || e.error?.code || e.code || 'whatsapp_api_error';\nconst msg = e.error?.error?.message || e.error?.message || e.message || 'WhatsApp publication failed';\nreturn [{\n  json: {\n    ...prep,\n    status: 'failed',\n    platform_post_id: null,\n    published_at: null,\n    raw_response: e,\n    error_detail: { stage: 'publication', platform: 'whatsapp', error_code: String(code), message: String(msg), retry_count: 2, timestamp: new Date().toISOString() }\n  }\n}];"
+      }
+    },
+    {
+      "id": "wa08",
+      "name": "CODE - WhatsApp Not Configured",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [60, 460],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const p = $input.first().json;\nreturn [{ json: { ...p, status: 'not_configured', platform_post_id: null, published_at: null, raw_response: null, error_detail: { stage: 'publication_preparation', platform: 'whatsapp', error_code: 'not_configured', message: 'Missing WhatsApp configuration: ' + p.missing_configuration.join(','), retry_count: 0, timestamp: new Date().toISOString() } } }];"
+      }
+    },
+    {
+      "id": "wa09",
+      "name": "DB - Store WhatsApp Publication",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [740, 300],
+      "credentials": { "postgres": { "id": "POSTGRES_CREDENTIAL", "name": "POSTGRES_CREDENTIAL" } },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO publications (schedule_id, platform, platform_post_id, published_at, status, error_detail, raw_response) VALUES ($1::uuid, 'whatsapp', $2, NULLIF($3,'')::timestamptz, $4, $5::jsonb, $6::jsonb) ON CONFLICT (schedule_id, platform) DO UPDATE SET platform_post_id = EXCLUDED.platform_post_id, published_at = EXCLUDED.published_at, status = EXCLUDED.status, error_detail = EXCLUDED.error_detail, raw_response = EXCLUDED.raw_response RETURNING publication_id, schedule_id, platform, platform_post_id, status, published_at;",
+        "options": {
+          "queryReplacement": "={{ $json.schedule_id }},{{ $json.platform_post_id || '' }},{{ $json.published_at || '' }},{{ $json.status }},{{ JSON.stringify($json.error_detail) }},{{ JSON.stringify($json.raw_response || {}) }}"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "wa10",
+      "name": "CODE - WhatsApp Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const row = $input.first().json || {};\nreturn [{ json: { publication_id: row.publication_id || null, schedule_id: row.schedule_id || null, platform: 'whatsapp', platform_post_id: row.platform_post_id || null, status: row.status || 'failed', published_at: row.published_at || null, error_detail: row.error_detail || null } }];"
+      }
+    }
+  ],
+  "connections": {
+    "TRIGGER - Execute From Master": { "main": [[{ "node": "CODE - WhatsApp Message Preparation", "type": "main", "index": 0 }]] },
+    "CODE - WhatsApp Message Preparation": { "main": [[{ "node": "IF - WhatsApp Configured", "type": "main", "index": 0 }]] },
+    "IF - WhatsApp Configured": {
+      "main": [
+        [{ "node": "CODE - Expand Recipients", "type": "main", "index": 0 }],
+        [{ "node": "CODE - WhatsApp Not Configured", "type": "main", "index": 0 }]
+      ]
+    },
+    "CODE - Expand Recipients": { "main": [[{ "node": "HTTP - WhatsApp Business API", "type": "main", "index": 0 }]] },
+    "HTTP - WhatsApp Business API": {
+      "main": [
+        [{ "node": "CODE - WhatsApp Success", "type": "main", "index": 0 }],
+        [{ "node": "CODE - WhatsApp Failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "CODE - WhatsApp Success": { "main": [[{ "node": "DB - Store WhatsApp Publication", "type": "main", "index": 0 }]] },
+    "CODE - WhatsApp Failure": { "main": [[{ "node": "DB - Store WhatsApp Publication", "type": "main", "index": 0 }]] },
+    "CODE - WhatsApp Not Configured": { "main": [[{ "node": "DB - Store WhatsApp Publication", "type": "main", "index": 0 }]] },
+    "DB - Store WhatsApp Publication": { "main": [[{ "node": "CODE - WhatsApp Result", "type": "main", "index": 0 }]] },
+    "CODE - WhatsApp Result": { "main": [[]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "UTC", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "all" },
+  "pinData": {},
+  "meta": { "instanceId": "SMMP" },
+  "tags": []
+}

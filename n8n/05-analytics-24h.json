@@ -1,0 +1,332 @@
+{
+  "name": "SMMP - 05 Analytics 24h Observation",
+  "nodes": [
+    {
+      "id": "an01",
+      "name": "TRIGGER - Execute From Master",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-900, 300],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            { "name": "publication_id", "type": "string" },
+            { "name": "campaign_id", "type": "string" },
+            { "name": "client_id", "type": "string" },
+            { "name": "platform", "type": "string" },
+            { "name": "platform_post_id", "type": "string" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "an02",
+      "name": "DB - Status Analytics Pending",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [-680, 300],
+      "credentials": { "postgres": { "id": "POSTGRES_CREDENTIAL", "name": "POSTGRES_CREDENTIAL" } },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE campaigns SET status = CASE WHEN status IN ('published','partially_published','scheduled','publishing') THEN 'analytics_pending' ELSE status END, updated_at = now() WHERE campaign_id = $1::uuid RETURNING campaign_id;",
+        "options": { "queryReplacement": "={{ $json.campaign_id }}" }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "an03",
+      "name": "WAIT - 24 Hour Observation",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-460, 300],
+      "webhookId": "smmp-analytics-24h",
+      "parameters": { "resume": "timeInterval", "amount": 24, "unit": "hours" }
+    },
+    {
+      "id": "an04",
+      "name": "CODE - Restore Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-240, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const t = $('TRIGGER - Execute From Master').first().json;\nreturn [{ json: { publication_id: t.publication_id, campaign_id: t.campaign_id, client_id: t.client_id, platform: String(t.platform || '').toLowerCase(), platform_post_id: t.platform_post_id, api_version: $env.META_API_VERSION || 'v21.0' } }];"
+      }
+    },
+    {
+      "id": "an05",
+      "name": "SWITCH - Metrics Source",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [-20, 300],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "conditions": [{ "id": "m-fb", "leftValue": "={{ $json.platform }}", "rightValue": "facebook", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "facebook"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose", "version": 2 },
+                "conditions": [{ "id": "m-ig", "leftValue": "={{ $json.platform }}", "rightValue": "instagram", "operator": { "type": "string", "operation": "equals" } }],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "instagram"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "extra", "renameFallbackOutput": "no_public_metrics" }
+      }
+    },
+    {
+      "id": "an06",
+      "name": "HTTP - Facebook Post Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [200, 140],
+      "credentials": { "httpHeaderAuth": { "id": "META_GRAPH_API_CREDENTIAL", "name": "META_GRAPH_API_CREDENTIAL" } },
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $json.api_version }}/{{ $json.platform_post_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "fields", "value": "id,created_time,shares,comments.summary(true),reactions.summary(true),insights.metric(post_impressions,post_impressions_unique)" }
+          ]
+        },
+        "options": { "timeout": 60000 }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "an07",
+      "name": "HTTP - Instagram Media Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [200, 300],
+      "credentials": { "httpHeaderAuth": { "id": "META_GRAPH_API_CREDENTIAL", "name": "META_GRAPH_API_CREDENTIAL" } },
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/{{ $json.api_version }}/{{ $json.platform_post_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "fields", "value": "id,timestamp,like_count,comments_count,insights.metric(impressions,reach,saved,shares)" }
+          ]
+        },
+        "options": { "timeout": 60000 }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 10000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "Available Instagram insight metric names vary by API version and media type. Adjust the fields list to match your Graph API version."
+    },
+    {
+      "id": "an08",
+      "name": "NOOP - No Public Metrics",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [200, 460],
+      "parameters": {},
+      "notes": "WhatsApp Business provides delivery/read statuses via webhooks, not post-level engagement metrics. Nothing is invented here."
+    },
+    {
+      "id": "an09",
+      "name": "CODE - Normalize Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [420, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Normalises platform payloads into a common metric set.\n// Metrics that the platform does not return are recorded as null, never as 0\n// and never invented.\nconst ctx = $('CODE - Restore Context').first().json;\nconst raw = $input.first().json || {};\nconst isError = !!raw.error;\n\nfunction insight(name) {\n  const arr = raw?.insights?.data || [];\n  const hit = arr.find(d => d.name === name);\n  const v = hit?.values?.[0]?.value;\n  return Number.isFinite(Number(v)) ? Number(v) : null;\n}\nconst num = v => (Number.isFinite(Number(v)) ? Number(v) : null);\n\nlet m = { impressions: null, reach: null, reactions: null, comments: null, shares: null };\n\nif (!isError && ctx.platform === 'facebook') {\n  m = {\n    impressions: insight('post_impressions'),\n    reach: insight('post_impressions_unique'),\n    reactions: num(raw?.reactions?.summary?.total_count),\n    comments: num(raw?.comments?.summary?.total_count),\n    shares: num(raw?.shares?.count)\n  };\n} else if (!isError && ctx.platform === 'instagram') {\n  m = {\n    impressions: insight('impressions'),\n    reach: insight('reach'),\n    reactions: num(raw?.like_count),\n    comments: num(raw?.comments_count),\n    shares: insight('shares')\n  };\n}\n\nconst available = Object.values(m).some(v => v !== null);\nreturn [{\n  json: {\n    ...ctx,\n    metrics: m,\n    metrics_available: available,\n    retrieval_error: isError ? { stage: 'analytics_retrieval', platform: ctx.platform, error_code: String(raw.error?.code || 'metrics_unavailable'), message: String(raw.error?.message || 'Metrics could not be retrieved'), retry_count: 2, timestamp: new Date().toISOString() } : null,\n    raw_payload: raw,\n    captured_at: new Date().toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "an10",
+      "name": "CODE - Calculate Engagement Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [640, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "/*\n * ENGAGEMENT SCORE (deterministic, documented, reproducible)\n * ---------------------------------------------------------\n * interactions = 1.0*reactions + 2.0*comments + 3.0*shares\n *   Weights reflect increasing effort/intent, not measured causal value.\n * denominator  = reach, else impressions, else null\n *\n * If a denominator exists:\n *   rate  = interactions / denominator\n *   score = min(1, rate / CEIL)   with CEIL = 0.10 (a 10% interaction rate\n *                                  maps to the top of the scale)\n * If no denominator exists the score is null. It is NEVER imputed.\n * Metrics absent from the API contribute 0 interactions but are reported\n * separately in metrics_missing so downstream agents know what was unobserved.\n */\nconst ctx = $input.first().json;\nconst m = ctx.metrics;\nconst CEIL = 0.10;\nconst W = { reactions: 1.0, comments: 2.0, shares: 3.0 };\n\nconst missing = Object.entries(m).filter(([, v]) => v === null).map(([k]) => k);\nconst interactions = (m.reactions || 0) * W.reactions + (m.comments || 0) * W.comments + (m.shares || 0) * W.shares;\nconst denom = m.reach ?? m.impressions ?? null;\n\nlet rate = null, score = null;\nif (denom && denom > 0) {\n  rate = interactions / denom;\n  score = Number(Math.min(1, rate / CEIL).toFixed(6));\n}\n\nreturn [{\n  json: {\n    ...ctx,\n    engagement: {\n      weighted_interactions: Number(interactions.toFixed(4)),\n      denominator_metric: m.reach != null ? 'reach' : (m.impressions != null ? 'impressions' : null),\n      denominator_value: denom,\n      interaction_rate: rate === null ? null : Number(rate.toFixed(6)),\n      engagement_score: score,\n      weights: W,\n      normalisation_ceiling: CEIL,\n      metrics_missing: missing,\n      formula: 'score = min(1, (1*reactions + 2*comments + 3*shares) / denominator / 0.10)',\n      note: 'Descriptive score over observed metrics. No causal interpretation.'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "an11",
+      "name": "DB - Get Historical Baseline",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [860, 300],
+      "credentials": { "postgres": { "id": "POSTGRES_CREDENTIAL", "name": "POSTGRES_CREDENTIAL" } },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT count(*) AS n, avg(a.engagement_score) AS client_avg_score, avg(a.impressions) AS client_avg_impressions, avg(a.reach) AS client_avg_reach, avg(a.engagement_score) FILTER (WHERE p.platform = $2) AS platform_avg_score, count(*) FILTER (WHERE p.platform = $2) AS platform_n FROM analytics a JOIN publications p ON p.publication_id = a.publication_id JOIN schedules s ON s.schedule_id = p.schedule_id JOIN content_assets ca ON ca.asset_id = s.asset_id JOIN campaigns c ON c.campaign_id = ca.campaign_id WHERE c.client_id = $1::uuid AND a.engagement_score IS NOT NULL AND a.captured_at > now() - interval '365 days';",
+        "options": { "queryReplacement": "={{ $json.client_id }},{{ $json.platform }}" }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "an12",
+      "name": "CODE - Build Analytics Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1080, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('CODE - Calculate Engagement Score').first().json;\nconst b = $input.first().json || {};\nconst n = Number(b.n) || 0;\nreturn [{\n  json: {\n    ...ctx,\n    baseline: {\n      observations: n,\n      available: n >= 3,\n      client_average_engagement_score: b.client_avg_score != null ? Number(Number(b.client_avg_score).toFixed(4)) : null,\n      client_average_impressions: b.client_avg_impressions != null ? Math.round(Number(b.client_avg_impressions)) : null,\n      client_average_reach: b.client_avg_reach != null ? Math.round(Number(b.client_avg_reach)) : null,\n      platform_average_engagement_score: b.platform_avg_score != null ? Number(Number(b.platform_avg_score).toFixed(4)) : null,\n      platform_observations: Number(b.platform_n) || 0\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "an13",
+      "name": "AI - Engagement Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 300],
+      "credentials": { "openAiApi": { "id": "OPENAI_CREDENTIAL", "name": "OPENAI_CREDENTIAL" } },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: ($env.OPENAI_MODEL || 'gpt-4.1'), temperature: 0, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'ROLE: You are a social media performance analyst.\\nTASK: Interpret the observed metrics of one published post against the client baseline.\\nCONTEXT: You receive platform metrics, the computed engagement score and the client historical baseline. Any metric shown as null was NOT returned by the platform.\\nOUTPUT CONTRACT: Return one JSON object with keys: summary (string), performance_score (number between 0 and 1), strengths (array of strings), weaknesses (array of strings), recommendations (array of strings).\\nCONSTRAINTS:\\n- JSON only, no Markdown.\\n- Never state or imply causality. Describe association and observation only.\\n- Never invent a metric. If a metric is null, say it was not available.\\n- performance_score must be derived from the supplied engagement_score and baseline; if engagement_score is null, return 0 and say the score could not be computed.\\n- Do not recommend actions that require data you were not given.' }, { role: 'user', content: '<metrics>' + JSON.stringify($json.metrics) + '</metrics>\\n<engagement>' + JSON.stringify($json.engagement) + '</engagement>\\n<baseline>' + JSON.stringify($json.baseline) + '</baseline>\\n<platform>' + $json.platform + '</platform>\\n<retrieval_error>' + JSON.stringify($json.retrieval_error) + '</retrieval_error>' } ] }) }}",
+        "options": { "timeout": 120000 }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "an14",
+      "name": "AI - Analytics Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1520, 300],
+      "credentials": { "openAiApi": { "id": "OPENAI_CREDENTIAL", "name": "OPENAI_CREDENTIAL" } },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const c = $('CODE - Build Analytics Context').first().json; const e = $json; return JSON.stringify({ model: ($env.OPENAI_MODEL || 'gpt-4.1'), temperature: 0, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: 'ROLE: You are a campaign analytics agent producing durable intelligence for future campaigns of one client.\\nTASK: Compare current performance with the client baseline and the platform baseline, and record reusable observations.\\nOUTPUT CONTRACT: Return one JSON object with keys: performance_interpretation (string), successful_themes (array of strings), weak_themes (array of strings), platform_insights (array of strings), timing_observations (array of strings), recommendations_for_future_campaigns (array of strings), confidence (string, one of low, medium, high).\\nCONSTRAINTS:\\n- JSON only, no Markdown.\\n- No causal claims. Timing observations must be phrased as associations observed in historical data.\\n- Do not invent metrics, themes or comparisons that are absent from the supplied context.\\n- If the baseline has fewer than 3 observations, set confidence to low and say the baseline is thin.' }, { role: 'user', content: '<engagement_agent_output>' + String(e?.choices?.[0]?.message?.content || '{}') + '</engagement_agent_output>\\n<metrics>' + JSON.stringify(c.metrics) + '</metrics>\\n<engagement>' + JSON.stringify(c.engagement) + '</engagement>\\n<baseline>' + JSON.stringify(c.baseline) + '</baseline>\\n<platform>' + c.platform + '</platform>' } ] }); })() }}",
+        "options": { "timeout": 120000 }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "an15",
+      "name": "CODE - Validate Analytics Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1740, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('CODE - Build Analytics Context').first().json;\nconst engRaw = $('AI - Engagement Agent').first().json;\nconst anaRaw = $input.first().json;\n\nfunction parse(r) {\n  try { return JSON.parse(String(r?.choices?.[0]?.message?.content || '').replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()); } catch (e) { return null; }\n}\nconst engagementAgent = parse(engRaw);\nconst analyticsAgent = parse(anaRaw);\nconst errors = [];\n\nconst arr = (o, k) => Array.isArray(o?.[k]);\nif (!engagementAgent) errors.push('engagement_agent_unparseable');\nelse {\n  if (typeof engagementAgent.summary !== 'string') errors.push('engagement_summary_invalid');\n  const ps = Number(engagementAgent.performance_score);\n  if (!Number.isFinite(ps) || ps < 0 || ps > 1) errors.push('performance_score_invalid');\n  for (const k of ['strengths', 'weaknesses', 'recommendations']) if (!arr(engagementAgent, k)) errors.push('engagement_' + k + '_invalid');\n}\nif (!analyticsAgent) errors.push('analytics_agent_unparseable');\nelse {\n  if (typeof analyticsAgent.performance_interpretation !== 'string') errors.push('interpretation_invalid');\n  for (const k of ['successful_themes', 'weak_themes', 'platform_insights', 'timing_observations', 'recommendations_for_future_campaigns']) if (!arr(analyticsAgent, k)) errors.push('analytics_' + k + '_invalid');\n}\n\n// The numeric engagement score is ALWAYS the deterministic one, never the LLM's.\nreturn [{\n  json: {\n    ...ctx,\n    insights: {\n      engagement_agent: engagementAgent,\n      analytics_agent: analyticsAgent,\n      validation_errors: errors,\n      valid: errors.length === 0,\n      model_version: $env.OPENAI_MODEL || 'gpt-4.1'\n    }\n  }\n}];"
+      }
+    },
+    {
+      "id": "an16",
+      "name": "DB - Persist Analytics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1960, 300],
+      "credentials": { "postgres": { "id": "POSTGRES_CREDENTIAL", "name": "POSTGRES_CREDENTIAL" } },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO analytics (publication_id, captured_at, impressions, reach, reactions, comments, shares, engagement_score, insights, model_version, raw_payload) VALUES ($1::uuid, now(), $2::int, $3::int, $4::int, $5::int, $6::int, $7::numeric, $8::jsonb, $9, $10::jsonb) ON CONFLICT (publication_id, captured_at) DO NOTHING RETURNING analytic_id, publication_id, engagement_score;",
+        "options": {
+          "queryReplacement": "={{ $json.publication_id }},{{ $json.metrics.impressions }},{{ $json.metrics.reach }},{{ $json.metrics.reactions }},{{ $json.metrics.comments }},{{ $json.metrics.shares }},{{ $json.engagement.engagement_score }},{{ JSON.stringify($json.insights) }},{{ $json.insights.model_version }},{{ JSON.stringify($json.raw_payload) }}"
+        }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput",
+      "notes": "Parameter order: publication_id, impressions, reach, reactions, comments, shares, engagement_score, insights, model_version, raw_payload."
+    },
+    {
+      "id": "an17",
+      "name": "DB - Update Campaign Analytics Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [2180, 300],
+      "credentials": { "postgres": { "id": "POSTGRES_CREDENTIAL", "name": "POSTGRES_CREDENTIAL" } },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE campaigns c SET status = CASE WHEN NOT EXISTS (SELECT 1 FROM content_assets ca JOIN schedules s ON s.asset_id = ca.asset_id JOIN publications p ON p.schedule_id = s.schedule_id LEFT JOIN analytics a ON a.publication_id = p.publication_id WHERE ca.campaign_id = c.campaign_id AND p.status = 'published' AND a.analytic_id IS NULL) THEN 'analytics_complete' ELSE 'analytics_pending' END, updated_at = now() WHERE c.campaign_id = $1::uuid RETURNING campaign_id, status;",
+        "options": { "queryReplacement": "={{ $('CODE - Build Analytics Context').first().json.campaign_id }}" }
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "an18",
+      "name": "CODE - Analytics Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2400, 300],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const ctx = $('CODE - Validate Analytics Output').first().json;\nconst row = $input.first().json || {};\nreturn [{ json: { campaign_id: ctx.campaign_id, publication_id: ctx.publication_id, platform: ctx.platform, campaign_status: row.status || null, engagement_score: ctx.engagement.engagement_score, metrics_available: ctx.metrics_available, insights_valid: ctx.insights.valid, validation_errors: ctx.insights.validation_errors } }];"
+      }
+    }
+  ],
+  "connections": {
+    "TRIGGER - Execute From Master": { "main": [[{ "node": "DB - Status Analytics Pending", "type": "main", "index": 0 }]] },
+    "DB - Status Analytics Pending": { "main": [[{ "node": "WAIT - 24 Hour Observation", "type": "main", "index": 0 }]] },
+    "WAIT - 24 Hour Observation": { "main": [[{ "node": "CODE - Restore Context", "type": "main", "index": 0 }]] },
+    "CODE - Restore Context": { "main": [[{ "node": "SWITCH - Metrics Source", "type": "main", "index": 0 }]] },
+    "SWITCH - Metrics Source": {
+      "main": [
+        [{ "node": "HTTP - Facebook Post Insights", "type": "main", "index": 0 }],
+        [{ "node": "HTTP - Instagram Media Insights", "type": "main", "index": 0 }],
+        [{ "node": "NOOP - No Public Metrics", "type": "main", "index": 0 }]
+      ]
+    },
+    "HTTP - Facebook Post Insights": { "main": [[{ "node": "CODE - Normalize Metrics", "type": "main", "index": 0 }]] },
+    "HTTP - Instagram Media Insights": { "main": [[{ "node": "CODE - Normalize Metrics", "type": "main", "index": 0 }]] },
+    "NOOP - No Public Metrics": { "main": [[{ "node": "CODE - Normalize Metrics", "type": "main", "index": 0 }]] },
+    "CODE - Normalize Metrics": { "main": [[{ "node": "CODE - Calculate Engagement Score", "type": "main", "index": 0 }]] },
+    "CODE - Calculate Engagement Score": { "main": [[{ "node": "DB - Get Historical Baseline", "type": "main", "index": 0 }]] },
+    "DB - Get Historical Baseline": { "main": [[{ "node": "CODE - Build Analytics Context", "type": "main", "index": 0 }]] },
+    "CODE - Build Analytics Context": { "main": [[{ "node": "AI - Engagement Agent", "type": "main", "index": 0 }]] },
+    "AI - Engagement Agent": { "main": [[{ "node": "AI - Analytics Agent", "type": "main", "index": 0 }]] },
+    "AI - Analytics Agent": { "main": [[{ "node": "CODE - Validate Analytics Output", "type": "main", "index": 0 }]] },
+    "CODE - Validate Analytics Output": { "main": [[{ "node": "DB - Persist Analytics", "type": "main", "index": 0 }]] },
+    "DB - Persist Analytics": { "main": [[{ "node": "DB - Update Campaign Analytics Status", "type": "main", "index": 0 }]] },
+    "DB - Update Campaign Analytics Status": { "main": [[{ "node": "CODE - Analytics Result", "type": "main", "index": 0 }]] },
+    "CODE - Analytics Result": { "main": [[]] }
+  },
+  "settings": { "executionOrder": "v1", "timezone": "UTC", "saveDataErrorExecution": "all", "saveDataSuccessExecution": "all", "saveExecutionProgress": true },
+  "pinData": {},
+  "meta": { "instanceId": "SMMP" },
+  "tags": []
+}

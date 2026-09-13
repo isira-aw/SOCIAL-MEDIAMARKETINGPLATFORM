@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Social Media Campaign Generator — Demo</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --panel:#fff; --ink:#15181d; --muted:#6b7280;
+    --line:#e3e6ea; --accent:#4f46e5; --accent-soft:#eef2ff;
+    --ok:#0f7b4f; --err:#b42318; --radius:12px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --bg:#0f1115; --panel:#171a20; --ink:#e8eaed; --muted:#9aa2ae;
+           --line:#272b33; --accent:#8b87ff; --accent-soft:#1e1f3a;
+           --ok:#4ade80; --err:#fca5a5; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+  header{margin-bottom:22px}
+  h1{font-size:22px;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13.5px}
+  .grid{display:grid;grid-template-columns:380px 1fr;gap:20px;align-items:start}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);
+        border-radius:var(--radius);padding:18px}
+  label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);
+        margin:12px 0 5px;text-transform:uppercase;letter-spacing:.04em}
+  input,textarea,select{width:100%;padding:9px 11px;border:1px solid var(--line);
+        border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;font-size:14px}
+  textarea{min-height:110px;resize:vertical}
+  input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+  .chip{display:flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid var(--line);
+        border-radius:999px;cursor:pointer;font-size:13.5px;user-select:none;background:var(--bg)}
+  .chip input{width:auto;margin:0;accent-color:var(--accent)}
+  .chip:has(input:checked){background:var(--accent-soft);border-color:var(--accent)}
+  button{width:100%;margin-top:18px;padding:11px;border:0;border-radius:9px;
+         background:var(--accent);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  .hint{font-size:12px;color:var(--muted);margin-top:7px}
+  .status{margin-top:14px;font-size:13.5px;padding:10px 12px;border-radius:8px;display:none}
+  .status.show{display:block}
+  .status.err{background:color-mix(in srgb,var(--err) 12%,transparent);color:var(--err)}
+  .status.ok{background:color-mix(in srgb,var(--ok) 12%,transparent);color:var(--ok)}
+  .status.busy{background:var(--accent-soft);color:var(--accent)}
+  .empty{color:var(--muted);text-align:center;padding:70px 20px;font-size:14px}
+  .post{border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px;background:var(--panel)}
+  .post h3{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;
+           display:flex;align-items:center;gap:8px}
+  .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .facebook .dot{background:#1877f2}.instagram .dot{background:#e1306c}.whatsapp .dot{background:#25d366}
+  .caption{white-space:pre-wrap;margin:0 0 10px}
+  .tags{color:var(--accent);font-size:13.5px;word-break:break-word}
+  .cta{margin-top:10px;font-size:13px;color:var(--muted)}
+  .cta b{color:var(--ink)}
+  .meta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--muted);
+        border-top:1px solid var(--line);padding-top:12px;margin-top:14px}
+  .sec-title{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+             margin:0 0 8px;font-weight:600}
+  .pill{display:inline-block;background:var(--accent-soft);color:var(--accent);
+        border-radius:999px;padding:3px 10px;font-size:12.5px;margin:0 6px 6px 0}
+  .imgprompt{font-style:italic;color:var(--muted);white-space:pre-wrap}
+  .copy{float:right;font-size:11.5px;background:none;border:1px solid var(--line);
+        color:var(--muted);width:auto;margin:0;padding:3px 9px;border-radius:6px;font-weight:500}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>AI Social Media Campaign Generator</h1>
+    <div class="sub">Demo UI — posts a campaign brief to an n8n workflow and renders the generated content.</div>
+  </header>
+
+  <div class="grid">
+    <form class="card" id="form">
+      <label for="url">n8n Webhook URL</label>
+      <input id="url" type="url" placeholder="http://localhost:5678/webhook/smmp-demo/campaign" required>
+      <div class="hint">Copy this from the Webhook node in n8n. Use <code>/webhook-test/</code> while the canvas is listening.</div>
+
+      <label for="business">Business name</label>
+      <input id="business" required placeholder="Ceylon Spice Kitchen">
+
+      <div class="row">
+        <div>
+          <label for="sector">Sector</label>
+          <input id="sector" placeholder="Food &amp; beverage">
+        </div>
+        <div>
+          <label for="objective">Objective</label>
+          <select id="objective">
+            <option value="product_launch">Product launch</option>
+            <option value="brand_awareness">Brand awareness</option>
+            <option value="promotion">Promotion</option>
+            <option value="engagement">Engagement</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label for="product">Product</label>
+          <input id="product" placeholder="Cold-pressed coconut oil">
+        </div>
+        <div>
+          <label for="tone">Tone</label>
+          <input id="tone" placeholder="warm, informative">
+        </div>
+      </div>
+
+      <label for="audience">Target audience</label>
+      <input id="audience" placeholder="Home cooks aged 25-45 in Colombo">
+
+      <label for="brief">Campaign brief</label>
+      <textarea id="brief" required placeholder="We are launching a new range of cold-pressed coconut oil sourced from small farms in the south. We want to highlight the traditional pressing method and the fact that nothing is added."></textarea>
+
+      <label>Platforms</label>
+      <div class="chips">
+        <label class="chip"><input type="checkbox" value="facebook" checked> Facebook</label>
+        <label class="chip"><input type="checkbox" value="instagram" checked> Instagram</label>
+        <label class="chip"><input type="checkbox" value="whatsapp"> WhatsApp</label>
+      </div>
+
+      <button type="submit" id="go">Generate campaign</button>
+      <div class="status" id="status"></div>
+    </form>
+
+    <div id="out">
+      <div class="card"><div class="empty">Fill in the brief and generate a campaign to see the output here.</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const STORE = 'smmp-demo-url';
+
+try { const s = localStorage.getItem(STORE); if (s) $('url').value = s; } catch (e) {}
+
+function setStatus(kind, msg) {
+  const el = $('status');
+  el.className = 'status show ' + kind;
+  el.textContent = msg;
+}
+function clearStatus() { $('status').className = 'status'; }
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function render(d) {
+  const out = $('out');
+  const parts = [];
+
+  if (d.intent || d.strategy) {
+    parts.push('<div class="card" style="margin-bottom:14px">');
+    if (d.intent) {
+      parts.push('<p class="sec-title">Parsed intent</p>');
+      const i = d.intent;
+      parts.push('<div style="font-size:13.5px;margin-bottom:12px">');
+      if (i.objective) parts.push('<span class="pill">' + esc(i.objective) + '</span>');
+      if (i.product)   parts.push('<span class="pill">' + esc(i.product) + '</span>');
+      if (i.audience)  parts.push('<span class="pill">' + esc(i.audience) + '</span>');
+      if (i.tone)      parts.push('<span class="pill">' + esc(i.tone) + '</span>');
+      parts.push('</div>');
+      if (Array.isArray(i.key_messages) && i.key_messages.length) {
+        parts.push('<ul style="margin:0 0 4px;padding-left:18px;font-size:13.5px">' +
+          i.key_messages.map(m => '<li>' + esc(m) + '</li>').join('') + '</ul>');
+      }
+    }
+    if (d.strategy) {
+      parts.push('<p class="sec-title" style="margin-top:16px">Strategy</p>');
+      if (Array.isArray(d.strategy.themes)) {
+        parts.push('<div style="margin-bottom:8px">' +
+          d.strategy.themes.map(t => '<span class="pill">' + esc(t) + '</span>').join('') + '</div>');
+      }
+      if (d.strategy.rationale) {
+        parts.push('<div style="font-size:13.5px;color:var(--muted)">' + esc(d.strategy.rationale) + '</div>');
+      }
+    }
+    parts.push('</div>');
+  }
+
+  for (const p of (d.posts || [])) {
+    const tags = (p.hashtags || []).join(' ');
+    const copyText = [p.caption, p.cta, tags].filter(Boolean).join('\n\n');
+    parts.push(
+      '<div class="post ' + esc(p.platform) + '">' +
+        '<h3><span class="dot"></span>' + esc(p.platform) +
+          '<button class="copy" data-copy="' + esc(copyText) + '">Copy</button></h3>' +
+        '<p class="caption">' + esc(p.caption) + '</p>' +
+        (tags ? '<div class="tags">' + esc(tags) + '</div>' : '') +
+        (p.cta ? '<div class="cta"><b>CTA:</b> ' + esc(p.cta) + '</div>' : '') +
+      '</div>');
+  }
+
+  if (d.image_prompt) {
+    parts.push('<div class="card" style="margin-bottom:14px">' +
+      '<p class="sec-title">Image prompt</p>' +
+      '<div class="imgprompt">' + esc(d.image_prompt) + '</div></div>');
+  }
+
+  if (Array.isArray(d.missing_platforms) && d.missing_platforms.length) {
+    parts.push('<div class="card" style="margin-bottom:14px;color:var(--err);font-size:13.5px">' +
+      'No post was produced for: ' + esc(d.missing_platforms.join(', ')) + '</div>');
+  }
+
+  parts.push('<div class="card"><div class="meta">' +
+    '<span>Campaign <b>' + esc(d.campaign_id || '—') + '</b></span>' +
+    '<span>Model ' + esc(d.model || '—') + '</span>' +
+    '<span>' + esc(d.generated_at || '') + '</span>' +
+  '</div></div>');
+
+  out.innerHTML = parts.join('');
+}
+
+$('out').addEventListener('click', async e => {
+  const btn = e.target.closest('.copy');
+  if (!btn) return;
+  try {
+    await navigator.clipboard.writeText(btn.dataset.copy);
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1400);
+  } catch (err) { btn.textContent = 'Failed'; }
+});
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const url = $('url').value.trim();
+  const platforms = [...document.querySelectorAll('.chip input:checked')].map(c => c.value);
+
+  if (platforms.length === 0) { setStatus('err', 'Select at least one platform.'); return; }
+
+  try { localStorage.setItem(STORE, url); } catch (err) {}
+
+  const payload = {
+    business_name: $('business').value.trim(),
+    sector:        $('sector').value.trim(),
+    product:       $('product').value.trim(),
+    audience:      $('audience').value.trim(),
+    tone:          $('tone').value.trim(),
+    objective:     $('objective').value,
+    brief:         $('brief').value.trim(),
+    platforms
+  };
+
+  $('go').disabled = true;
+  setStatus('busy', 'Generating… this usually takes 5-15 seconds.');
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    let data;
+    const text = await res.text();
+    try { data = JSON.parse(text); }
+    catch (err) { throw new Error('n8n returned a non-JSON response (HTTP ' + res.status + '): ' + text.slice(0, 200)); }
+
+    if (!res.ok || data.success === false) {
+      const detail = Array.isArray(data.errors) ? data.errors.join('; ') : (data.message || 'HTTP ' + res.status);
+      setStatus('err', detail);
+      return;
+    }
+
+    render(data);
+    setStatus('ok', 'Generated ' + (data.posts || []).length + ' post(s).');
+    setTimeout(clearStatus, 3500);
+
+  } catch (err) {
+    setStatus('err', err.message.includes('Failed to fetch')
+      ? 'Could not reach n8n. Check the webhook URL, that the workflow is active, and that the Webhook node has allowedOrigins set to *.'
+      : err.message);
+  } finally {
+    $('go').disabled = false;
+  }
+});
+</script>
+</body>
+</html>
